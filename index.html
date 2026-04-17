@@ -919,31 +919,33 @@ function onSearchInput(v) {
 function closeSearch() { document.getElementById('search-drop').classList.remove('open'); document.getElementById('search-drop').innerHTML=''; }
 async function doSearch(q) {
   try {
-    // Try API v2 directly first, fallback to corsproxy
-    let baseUrl=`https://world.openfoodfacts.org/api/v2/search?search_terms=${encodeURIComponent(q)}&page_size=10&fields=product_name,nutriments,brands&json=1`;
+    let params=`search_terms=${encodeURIComponent(q)}&page_size=20&fields=product_name,nutriments,brands,countries_tags,lang&json=1`;
+    let itUrl=`https://it.openfoodfacts.org/api/v2/search?${params}&lc=it&cc=it`;
+    let worldUrl=`https://world.openfoodfacts.org/api/v2/search?${params}`;
     let resp;
-    try {
-      resp = await fetch(baseUrl, {mode:'cors',headers:{'Accept':'application/json','User-Agent':'NutriTrack PWA'}});
-      if (!resp.ok) throw new Error('direct fail');
-    } catch(_) {
-      // fallback: corsproxy.io
-      let proxy = `https://corsproxy.io/?${encodeURIComponent(baseUrl)}`;
-      resp = await fetch(proxy);
+    try { resp=await fetch(itUrl,{mode:'cors',headers:{'Accept':'application/json'}}); if(!resp.ok) throw new Error(); }
+    catch(_) {
+      try { resp=await fetch(worldUrl,{mode:'cors',headers:{'Accept':'application/json'}}); if(!resp.ok) throw new Error(); }
+      catch(__) { resp=await fetch(`https://corsproxy.io/?${encodeURIComponent(worldUrl)}`); }
     }
     if (!resp.ok) throw new Error('HTTP '+resp.status);
     let data=await resp.json();
-    let valid=(data.products||[]).filter(p=>p.product_name&&p.nutriments&&(p.nutriments['energy-kcal_100g']>0||p.nutriments['energy_100g']>0));
+    let all=(data.products||[]).filter(p=>p.product_name&&p.nutriments&&(p.nutriments['energy-kcal_100g']>0||p.nutriments['energy_100g']>0));
+    // Italian products first
+    let isIT=p=>(p.countries_tags||[]).some(c=>c.includes('italy'))||p.lang==='it';
+    let valid=[...all.filter(isIT),...all.filter(p=>!isIT(p))];
     let drop=document.getElementById('search-drop');
-    if (!valid.length) { drop.innerHTML='<div class="s-item"><span class="s-item-sub">Nessun risultato. Prova in inglese o con il brand.</span></div>'; return; }
+    if (!valid.length) { drop.innerHTML='<div class="s-item"><span class="s-item-sub">Nessun risultato. Prova un termine diverso o in inglese.</span></div>'; return; }
     drop.innerHTML='';
-    valid.slice(0,7).forEach(p=>{
+    valid.slice(0,8).forEach(p=>{
       let kcal=Math.round(p.nutriments['energy-kcal_100g']||p.nutriments['energy_100g']/4.184||0);
       let prot=Math.round(p.nutriments['proteins_100g']||0);
       let carb=Math.round(p.nutriments['carbohydrates_100g']||0);
       let fat=Math.round(p.nutriments['fat_100g']||0);
       let brand=p.brands?' · '+p.brands.split(',')[0]:'';
+      let flag=isIT(p)?' 🇮🇹':'';
       let el=document.createElement('div'); el.className='s-item';
-      el.innerHTML=`<div class="s-item-name">${p.product_name}${brand}</div><div class="s-item-sub">${kcal} kcal/100g &nbsp;·&nbsp; P:${prot}g C:${carb}g G:${fat}g</div>`;
+      el.innerHTML=`<div class="s-item-name">${p.product_name}${brand}${flag}</div><div class="s-item-sub">${kcal} kcal/100g &nbsp;·&nbsp; P:${prot}g C:${carb}g G:${fat}g</div>`;
       el.onclick=()=>selectFood({name:p.product_name,kcal100:kcal,prot100:prot,carb100:carb,fat100:fat});
       drop.appendChild(el);
     });
