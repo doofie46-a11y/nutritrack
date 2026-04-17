@@ -919,8 +919,17 @@ function onSearchInput(v) {
 function closeSearch() { document.getElementById('search-drop').classList.remove('open'); document.getElementById('search-drop').innerHTML=''; }
 async function doSearch(q) {
   try {
-    let url=`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=10&fields=product_name,nutriments,brands`;
-    let resp=await fetch(url,{mode:'cors',headers:{'Accept':'application/json'}});
+    // Try API v2 directly first, fallback to corsproxy
+    let baseUrl=`https://world.openfoodfacts.org/api/v2/search?search_terms=${encodeURIComponent(q)}&page_size=10&fields=product_name,nutriments,brands&json=1`;
+    let resp;
+    try {
+      resp = await fetch(baseUrl, {mode:'cors',headers:{'Accept':'application/json','User-Agent':'NutriTrack PWA'}});
+      if (!resp.ok) throw new Error('direct fail');
+    } catch(_) {
+      // fallback: corsproxy.io
+      let proxy = `https://corsproxy.io/?${encodeURIComponent(baseUrl)}`;
+      resp = await fetch(proxy);
+    }
     if (!resp.ok) throw new Error('HTTP '+resp.status);
     let data=await resp.json();
     let valid=(data.products||[]).filter(p=>p.product_name&&p.nutriments&&(p.nutriments['energy-kcal_100g']>0||p.nutriments['energy_100g']>0));
