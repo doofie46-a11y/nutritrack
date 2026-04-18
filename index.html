@@ -319,7 +319,7 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);background:var(--b
           <option value="spuntino">🍎 Spuntino</option>
         </select>
         <div class="search-wrap">
-          <input class="search-input" id="search-input" type="text" placeholder="Cerca su OpenFoodFacts…" autocomplete="off" oninput="onSearchInput(this.value)"/>
+          <input class="search-input" id="search-input" type="text" placeholder="Cerca alimento… (min. 2 caratteri)" autocomplete="off" oninput="onSearchInput(this.value)"/>
           <div class="search-drop" id="search-drop"></div>
         </div>
         <div class="qty-row" id="qty-row">
@@ -471,7 +471,7 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);background:var(--b
 <!-- MODAL RICETTA -->
 <div class="modal-overlay" id="recipe-modal">
   <div class="modal">
-    <div class="modal-title">Nuova ricetta</div>
+    <div class="modal-title" id="recipe-modal-title">Nuova ricetta</div>
     <div class="form-group"><label class="form-label">Nome</label><input class="form-input" id="rec-name" type="text" placeholder="Es. Insalata proteica…"/></div>
     <div class="form-row-2">
       <div class="form-group"><label class="form-label">Kcal totali</label><input class="form-input" id="rec-kcal" type="number" value="0"/></div>
@@ -486,6 +486,28 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);background:var(--b
     <div style="display:flex;gap:8px">
       <button class="btn btn-outline" style="flex:1" onclick="closeRecipeModal()">Annulla</button>
       <button class="btn btn-accent" style="flex:1" onclick="saveRecipe()">Salva ricetta</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL AGGIUNGI ALIMENTO AL DATABASE -->
+<div class="modal-overlay" id="food-db-modal">
+  <div class="modal">
+    <div class="modal-title">Aggiungi alimento al database</div>
+    <div class="hint" style="margin-bottom:12px">Tutti i valori sono per 100g di alimento</div>
+    <div class="form-group"><label class="form-label">Nome</label><input class="form-input" id="fdb-name" type="text" placeholder="Es. Petto di pollo…"/></div>
+    <div class="form-row-2">
+      <div class="form-group"><label class="form-label">Kcal / 100g</label><input class="form-input" id="fdb-kcal" type="number" value="0" min="0"/></div>
+      <div class="form-group"><label class="form-label">Quantità da aggiungere (g)</label><input class="form-input" id="fdb-qty" type="number" value="100" min="1"/></div>
+    </div>
+    <div class="form-row-3">
+      <div class="form-group"><label class="form-label">Proteine g</label><input class="form-input" id="fdb-prot" type="number" value="0" min="0"/></div>
+      <div class="form-group"><label class="form-label">Carbo g</label><input class="form-input" id="fdb-carb" type="number" value="0" min="0"/></div>
+      <div class="form-group"><label class="form-label">Grassi g</label><input class="form-input" id="fdb-fat" type="number" value="0" min="0"/></div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-outline" style="flex:1" onclick="closeFoodDBModal()">Annulla</button>
+      <button class="btn btn-accent" style="flex:1" onclick="saveFoodToDB()">Salva &amp; aggiungi</button>
     </div>
   </div>
 </div>
@@ -554,8 +576,18 @@ CREATE TABLE IF NOT EXISTS recipes (
   note TEXT,
   created_at INTEGER DEFAULT (strftime('%s','now'))
 );
+CREATE TABLE IF NOT EXISTS food_db (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  kcal REAL DEFAULT 0,
+  prot REAL DEFAULT 0,
+  carb REAL DEFAULT 0,
+  fat  REAL DEFAULT 0,
+  custom INTEGER DEFAULT 0
+);
 CREATE INDEX IF NOT EXISTS idx_foods_date ON foods(date);
 CREATE INDEX IF NOT EXISTS idx_activities_date ON activities(date);
+CREATE INDEX IF NOT EXISTS idx_food_db_name ON food_db(name);
 `;
 
 async function initDB() {
@@ -588,6 +620,7 @@ async function initDB() {
   }
 
   db.run(SCHEMA);
+  seedFoodDB();
   await persistDB();
   return true;
 }
@@ -629,6 +662,197 @@ function persistFallback(data) {
     for (let i=0;i<data.length;i++) bin += String.fromCharCode(data[i]);
     localStorage.setItem('nt_db', btoa(bin));
   } catch(e) { console.warn('localStorage fallback failed:', e); }
+}
+
+function seedFoodDB() {
+  let count = dbGet('SELECT COUNT(*) as n FROM food_db');
+  if (count && count[0].n > 0) return;
+  // [nome, kcal/100g, prot, carb, grassi]
+  const SEED = [
+    // Cereali e derivati
+    ['Pasta di semola (cruda)',353,12,70,1.5],
+    ['Pasta integrale (cruda)',335,13,66,2.5],
+    ['Riso bianco (crudo)',362,7,80,0.6],
+    ['Riso integrale (crudo)',355,8,74,2.5],
+    ['Riso basmati (crudo)',356,8,78,0.6],
+    ['Couscous (crudo)',376,13,77,0.6],
+    ['Farro (crudo)',335,14,68,2.5],
+    ['Orzo perlato (crudo)',354,10,74,1.2],
+    ['Avena fiocchi',383,13,67,7],
+    ['Polenta / farina di mais',356,9,74,3.5],
+    ['Pane comune',265,8,54,0.7],
+    ['Pane integrale',234,8,44,1.9],
+    ['Pane di segale',218,7,45,1.5],
+    ['Pane ai cereali',250,9,47,2.5],
+    ['Pane per tramezzini',270,9,50,3],
+    ['Fette biscottate',392,10,73,6],
+    ['Crackers classici',410,10,68,12],
+    ['Grissini',415,11,75,8],
+    ['Cornflakes',375,7,84,1],
+    ['Muesli',380,10,64,9],
+    ['Gnocchi di patate (crudi)',123,3,26,0.4],
+    // Carni
+    ['Petto di pollo',106,22,0,2.3],
+    ['Coscia di pollo',174,19,0,11],
+    ['Pollo intero',189,18,0,13],
+    ['Petto di tacchino',107,24,0,1.2],
+    ['Bistecca di manzo',183,22,0,11],
+    ['Macinato di manzo (10% grassi)',176,19,0,11],
+    ['Macinato di manzo (20% grassi)',243,18,0,19],
+    ['Lonza di maiale',175,22,0,9.5],
+    ['Costine di maiale',295,17,0,25],
+    ['Fettina di vitello',109,21,0,2.8],
+    ['Agnello coscia',182,20,0,11],
+    ['Prosciutto cotto',145,17,1,8],
+    ['Prosciutto crudo',243,25,0,16],
+    ['Bresaola',151,32,0,2.7],
+    ['Mortadella',311,14,3,27],
+    ['Salame Milano',430,21,2,38],
+    ['Speck',285,26,0,20],
+    ['Wurstel di suino',270,11,3,24],
+    ['Pancetta tesa',398,14,0,38],
+    // Pesce e frutti di mare
+    ['Tonno al naturale (sgocciolato)',116,27,0,1],
+    ['Tonno sott\'olio (sgocciolato)',198,29,0,9],
+    ['Salmone fresco',182,20,0,11],
+    ['Salmone affumicato',142,20,0,7],
+    ['Merluzzo',77,17,0,0.7],
+    ['Orata',96,17,0,3],
+    ['Branzino / spigola',82,18,0,1.5],
+    ['Sgombro',184,20,0,12],
+    ['Sardine fresche',162,19,0,9],
+    ['Acciughe / alici',131,20,0,6],
+    ['Gamberetti',90,18,0,2],
+    ['Calamari',82,15,2,1.5],
+    ['Vongole',61,10,3,1],
+    ['Cozze',87,12,4,2.2],
+    ['Polpo',82,15,1.4,1.7],
+    // Latticini
+    ['Latte intero',64,3.2,4.7,3.6],
+    ['Latte parzialmente scremato',46,3.5,4.9,1.5],
+    ['Latte scremato',35,3.6,5,0.2],
+    ['Yogurt bianco intero',66,3.9,4.7,3.2],
+    ['Yogurt greco intero',97,9,3.6,5],
+    ['Yogurt greco 0%',59,10,3.6,0.3],
+    ['Yogurt alla frutta',90,3.5,17,1],
+    ['Mozzarella vaccina',253,18,3,19],
+    ['Mozzarella di bufala',288,16,1,24],
+    ['Ricotta vaccina',138,8,5,10],
+    ['Ricotta di pecora',180,9,4,15],
+    ['Parmigiano Reggiano',392,33,0,28],
+    ['Grana Padano',384,33,0,28],
+    ['Pecorino romano',372,24,0,31],
+    ['Gorgonzola',352,19,0,30],
+    ['Fontina',343,25,0.5,27],
+    ['Scamorza',290,23,1,22],
+    ['Fiocchi di latte (cottage)',99,12,4,4],
+    ['Burro',750,0.5,1,83],
+    ['Panna da cucina 20%',205,2,3,21],
+    // Uova
+    ['Uovo intero (cotto)',155,13,1,11],
+    ['Albume d\'uovo',48,11,0.7,0.2],
+    ['Tuorlo d\'uovo',322,16,0.6,28],
+    // Legumi
+    ['Ceci cotti',164,9,27,3],
+    ['Lenticchie cotte',116,9,20,0.4],
+    ['Fagioli borlotti cotti',130,9,22,0.5],
+    ['Fagioli cannellini cotti',128,9,22,0.5],
+    ['Piselli freschi',84,5,14,0.4],
+    ['Soia cotta',160,17,8,9],
+    ['Tofu naturale',76,8,2,4.8],
+    ['Edamame (sgranati)',122,11,10,5.2],
+    ['Hummus',166,8,14,10],
+    // Verdure
+    ['Pomodori freschi',18,0.9,3.5,0.2],
+    ['Pomodorini ciliegino',18,0.9,3.5,0.2],
+    ['Insalata lattuga / iceberg',15,1.4,2.2,0.2],
+    ['Carote crude',35,0.9,8,0.2],
+    ['Zucchine crude',16,1.2,2.5,0.2],
+    ['Melanzane crude',24,1,5,0.2],
+    ['Peperoni crudi',22,1,4.5,0.3],
+    ['Spinaci crudi',23,2.9,3.6,0.4],
+    ['Broccoli crudi',34,2.8,6.6,0.4],
+    ['Cavolfiore crudo',25,2,5,0.3],
+    ['Cipolla cruda',40,1.1,9,0.1],
+    ['Porro crudo',29,1.8,6.5,0.3],
+    ['Funghi champignon',22,3.1,3.3,0.3],
+    ['Funghi porcini',27,3.7,4.4,0.3],
+    ['Asparagi',20,2.2,3.9,0.1],
+    ['Carciofi crudi',47,3.3,10,0.2],
+    ['Finocchio crudo',31,1.2,7,0.2],
+    ['Cetrioli crudi',16,0.6,3.6,0.1],
+    ['Rucola',25,2.6,3.7,0.7],
+    ['Radicchio',23,1.4,4.4,0.3],
+    ['Cavolo cappuccio',25,1.3,5.8,0.1],
+    ['Cavoletti di Bruxelles',43,3.4,9,0.3],
+    ['Sedano crudo',16,0.7,3.5,0.1],
+    ['Patate crude',79,2,18,0.1],
+    ['Patate dolci crude',86,1.6,20,0.1],
+    ['Aglio',149,6.4,33,0.5],
+    ['Mais dolce (scatoletta)',91,3.2,18,1.2],
+    // Frutta
+    ['Mela',52,0.3,14,0.2],
+    ['Pera',57,0.4,15,0.1],
+    ['Banana',89,1.1,23,0.3],
+    ['Arancia',47,0.9,12,0.1],
+    ['Mandarino',53,0.8,13,0.3],
+    ['Pompelmo',42,0.8,11,0.1],
+    ['Limone (succo)',22,0.4,6.9,0.2],
+    ['Fragole',32,0.7,7.7,0.3],
+    ['Uva',69,0.7,18,0.2],
+    ['Pesca',39,0.9,10,0.1],
+    ['Albicocche',48,1.4,11,0.4],
+    ['Kiwi',61,1.1,15,0.5],
+    ['Avocado',160,2,9,15],
+    ['Ananas',50,0.5,13,0.1],
+    ['Anguria',30,0.6,8,0.2],
+    ['Melone',34,0.8,8,0.2],
+    ['Lamponi',52,1.2,12,0.7],
+    ['Mirtilli',57,0.7,14,0.3],
+    ['Ciliegie',63,1,16,0.2],
+    ['Fichi freschi',74,0.8,19,0.3],
+    ['Melograno (arilli)',83,1.7,19,1.2],
+    // Grassi, oli e condimenti
+    ['Olio extravergine di oliva',884,0,0,100],
+    ['Olio di semi di girasole',884,0,0,100],
+    ['Burro di arachidi',588,25,20,50],
+    ['Maionese',680,1.5,3,75],
+    ['Pesto alla genovese',349,7,8,33],
+    ['Passata di pomodoro',28,1.6,5.7,0.2],
+    ['Concentrato di pomodoro',71,4,14,0.3],
+    ['Aceto balsamico',88,0.5,17,0],
+    // Noci e semi
+    ['Noci',654,15,14,65],
+    ['Mandorle',579,21,22,50],
+    ['Nocciole',628,15,17,61],
+    ['Arachidi tostate',567,26,16,49],
+    ['Anacardi',553,18,30,44],
+    ['Semi di girasole',584,21,20,51],
+    ['Semi di chia',486,17,42,31],
+    ['Semi di lino',534,18,29,42],
+    // Dolci e snack
+    ['Cioccolato fondente 70%',545,5,46,39],
+    ['Cioccolato al latte',535,7,59,30],
+    ['Biscotti secchi (tipo Oro Saiwa)',440,8,70,15],
+    ['Biscotti integrali',410,9,65,14],
+    ['Merendina (pan di spagna)',370,6,55,14],
+    ['Gelato alla crema',207,3.5,24,11],
+    ['Torta margherita',350,6,54,13],
+    // Bevande e altro
+    ['Succo d\'arancia 100%',45,0.7,10,0.2],
+    ['Latte di soia non zuccherato',34,3.3,2.8,1.8],
+    ['Latte di avena',47,1,8,1.5],
+    ['Latte di mandorla non zuccherato',24,0.5,3.7,1],
+    ['Proteine del siero del latte (whey)',380,75,8,7],
+    // Piatti tipici (porzione 100g)
+    ['Pizza margherita',261,8.5,33,10],
+    ['Lasagne al ragù',165,9,16,7],
+    ['Risotto (cotto)',158,4,28,3.5],
+    ['Minestrone di verdure',51,2.5,9,0.7],
+  ];
+  const stmt = db.prepare('INSERT INTO food_db(name,kcal,prot,carb,fat,custom) VALUES(?,?,?,?,?,0)');
+  SEED.forEach(f => stmt.run(f));
+  stmt.free();
 }
 
 function dbRun(sql, params=[]) {
@@ -676,6 +900,7 @@ let searchTimer = null;
 let waterTimerID = null;
 let calViewYear, calViewMonth;
 let daysWithData = new Set();
+let editingRecipeId = null;
 
 // ── DATE HELPERS ──────────────────────────────────────────────────
 function todayKey() {
@@ -867,6 +1092,23 @@ function scheduleWaterReminders() {
     }
   }, interval*60*1000);
 }
+function checkWaterOnOpen() {
+  if (!('Notification' in window) || Notification.permission!=='granted') return;
+  if (!CFG.waterInterval || CFG.waterInterval<=0) return;
+  let lastOpen=getSetting('lastOpen',0);
+  let now=Date.now();
+  setSetting('lastOpen',now);
+  if (now-lastOpen < 60*60*1000) return; // meno di 1 ora dall'ultima apertura
+  let d=new Date(now), hhmm=d.getHours()*60+d.getMinutes();
+  let [fH,fM]=(CFG.waterFrom||'07:00').split(':').map(Number);
+  let [tH,tM]=(CFG.waterTo||'22:00').split(':').map(Number);
+  if (hhmm<fH*60+fM||hhmm>tH*60+tM) return;
+  let water=dbGet('SELECT glasses FROM water WHERE date=?',[todayKey()]);
+  let wg=water&&water.length?water[0].glasses:0;
+  if (wg<CFG.waterGoal) {
+    new Notification('💧 NutriTrack — Bevi acqua!',{body:'Bentornato! Hai bevuto '+wg+' bicchieri su '+CFG.waterGoal+' oggi.',icon:'icons/icon-192.png'});
+  }
+}
 
 // ── ACTIVITIES ────────────────────────────────────────────────────
 function buildActivities() {
@@ -906,50 +1148,50 @@ function removeActivity(id) {
   buildActivities(); updateDashboard();
 }
 
-// ── FOOD SEARCH ───────────────────────────────────────────────────
+// ── FOOD SEARCH (database locale) ────────────────────────────────
 function onSearchInput(v) {
   clearTimeout(searchTimer);
   document.getElementById('qty-row').classList.remove('vis');
-  if (v.length<3) { closeSearch(); return; }
-  let drop=document.getElementById('search-drop');
-  drop.innerHTML='<div class="s-item"><span class="s-item-sub">Ricerca in corso…</span></div>';
-  drop.classList.add('open');
-  searchTimer=setTimeout(()=>doSearch(v),700);
+  if (v.length<2) { closeSearch(); return; }
+  searchTimer=setTimeout(()=>doSearch(v),200);
 }
 function closeSearch() { document.getElementById('search-drop').classList.remove('open'); document.getElementById('search-drop').innerHTML=''; }
-async function doSearch(q) {
-  try {
-    let params=`search_terms=${encodeURIComponent(q)}&page_size=20&fields=product_name,nutriments,brands,countries_tags,lang&json=1`;
-    let itUrl=`https://it.openfoodfacts.org/api/v2/search?${params}&lc=it&cc=it`;
-    let worldUrl=`https://world.openfoodfacts.org/api/v2/search?${params}`;
-    let resp;
-    try { resp=await fetch(itUrl,{mode:'cors',headers:{'Accept':'application/json'}}); if(!resp.ok) throw new Error(); }
-    catch(_) {
-      try { resp=await fetch(worldUrl,{mode:'cors',headers:{'Accept':'application/json'}}); if(!resp.ok) throw new Error(); }
-      catch(__) { resp=await fetch(`https://corsproxy.io/?${encodeURIComponent(worldUrl)}`); }
-    }
-    if (!resp.ok) throw new Error('HTTP '+resp.status);
-    let data=await resp.json();
-    let all=(data.products||[]).filter(p=>p.product_name&&p.nutriments&&(p.nutriments['energy-kcal_100g']>0||p.nutriments['energy_100g']>0));
-    // Italian products first
-    let isIT=p=>(p.countries_tags||[]).some(c=>c.includes('italy'))||p.lang==='it';
-    let valid=[...all.filter(isIT),...all.filter(p=>!isIT(p))];
-    let drop=document.getElementById('search-drop');
-    if (!valid.length) { drop.innerHTML='<div class="s-item"><span class="s-item-sub">Nessun risultato. Prova un termine diverso o in inglese.</span></div>'; return; }
-    drop.innerHTML='';
-    valid.slice(0,8).forEach(p=>{
-      let kcal=Math.round(p.nutriments['energy-kcal_100g']||p.nutriments['energy_100g']/4.184||0);
-      let prot=Math.round(p.nutriments['proteins_100g']||0);
-      let carb=Math.round(p.nutriments['carbohydrates_100g']||0);
-      let fat=Math.round(p.nutriments['fat_100g']||0);
-      let brand=p.brands?' · '+p.brands.split(',')[0]:'';
-      let flag=isIT(p)?' 🇮🇹':'';
-      let el=document.createElement('div'); el.className='s-item';
-      el.innerHTML=`<div class="s-item-name">${p.product_name}${brand}${flag}</div><div class="s-item-sub">${kcal} kcal/100g &nbsp;·&nbsp; P:${prot}g C:${carb}g G:${fat}g</div>`;
-      el.onclick=()=>selectFood({name:p.product_name,kcal100:kcal,prot100:prot,carb100:carb,fat100:fat});
-      drop.appendChild(el);
-    });
-  } catch(e) { document.getElementById('search-drop').innerHTML=`<div class="s-item"><span class="s-item-sub">Errore: ${e.message}</span></div>`; }
+function doSearch(q) {
+  let results=dbGet('SELECT * FROM food_db WHERE name LIKE ? ORDER BY custom DESC, name LIMIT 20',['%'+q+'%'])||[];
+  let drop=document.getElementById('search-drop');
+  drop.innerHTML=''; drop.classList.add('open');
+  results.forEach(p=>{
+    let el=document.createElement('div'); el.className='s-item';
+    el.innerHTML=`<div class="s-item-name">${p.name}${p.custom?' <span style="color:var(--accent);font-size:10px">★ personale</span>':''}</div><div class="s-item-sub">${p.kcal} kcal/100g · P:${p.prot}g C:${p.carb}g G:${p.fat}g</div>`;
+    el.onclick=()=>selectFood({name:p.name,kcal100:p.kcal,prot100:p.prot,carb100:p.carb,fat100:p.fat});
+    drop.appendChild(el);
+  });
+  let addEl=document.createElement('div'); addEl.className='s-item';
+  addEl.innerHTML=`<div class="s-item-name" style="color:var(--accent)">➕ Aggiungi "${q}" al database</div><div class="s-item-sub">Inserisci i valori per 100g e salvalo</div>`;
+  addEl.onclick=()=>openFoodDBModal(q);
+  drop.appendChild(addEl);
+}
+function openFoodDBModal(name) {
+  closeSearch();
+  document.getElementById('fdb-name').value=name||'';
+  ['fdb-kcal','fdb-prot','fdb-carb','fdb-fat'].forEach(id=>document.getElementById(id).value=0);
+  document.getElementById('fdb-qty').value=100;
+  document.getElementById('food-db-modal').classList.add('open');
+}
+function closeFoodDBModal() { document.getElementById('food-db-modal').classList.remove('open'); }
+function saveFoodToDB() {
+  let name=document.getElementById('fdb-name').value.trim();
+  if (!name) { alert('Inserisci il nome dell\'alimento'); return; }
+  let kcal=parseFloat(document.getElementById('fdb-kcal').value)||0;
+  let prot=parseFloat(document.getElementById('fdb-prot').value)||0;
+  let carb=parseFloat(document.getElementById('fdb-carb').value)||0;
+  let fat=parseFloat(document.getElementById('fdb-fat').value)||0;
+  let qty=parseFloat(document.getElementById('fdb-qty').value)||100;
+  dbRun('INSERT INTO food_db(name,kcal,prot,carb,fat,custom) VALUES(?,?,?,?,?,1)',[name,kcal,prot,carb,fat]);
+  closeFoodDBModal();
+  document.getElementById('search-input').value=name;
+  selectFood({name,kcal100:kcal,prot100:prot,carb100:carb,fat100:fat});
+  document.getElementById('qty-val').value=qty;
 }
 function selectFood(f) {
   selectedFood=f;
@@ -1007,23 +1249,46 @@ function removeFood(id) {
 
 // ── RECIPES ───────────────────────────────────────────────────────
 function openRecipeModal() {
+  editingRecipeId=null;
+  document.getElementById('recipe-modal-title').textContent='Nuova ricetta';
   ['rec-name','rec-note'].forEach(id=>document.getElementById(id).value='');
   ['rec-kcal','rec-prot','rec-carb','rec-fat'].forEach(id=>document.getElementById(id).value=0);
   document.getElementById('rec-portions').value=1;
   document.getElementById('recipe-modal').classList.add('open');
 }
 function closeRecipeModal() { document.getElementById('recipe-modal').classList.remove('open'); }
+function editRecipe(id) {
+  let r=dbGet('SELECT * FROM recipes WHERE id=?',[id]);
+  if (!r||!r.length) return;
+  let rec=r[0];
+  editingRecipeId=id;
+  document.getElementById('recipe-modal-title').textContent='Modifica ricetta';
+  document.getElementById('rec-name').value=rec.name;
+  document.getElementById('rec-kcal').value=rec.kcal;
+  document.getElementById('rec-prot').value=rec.prot;
+  document.getElementById('rec-carb').value=rec.carb;
+  document.getElementById('rec-fat').value=rec.fat;
+  document.getElementById('rec-portions').value=rec.portions;
+  document.getElementById('rec-note').value=rec.note||'';
+  document.getElementById('recipe-modal').classList.add('open');
+}
 function saveRecipe() {
   let name=document.getElementById('rec-name').value.trim();
   if (!name) { alert('Inserisci un nome'); return; }
-  dbRun('INSERT INTO recipes(name,kcal,prot,carb,fat,portions,note) VALUES(?,?,?,?,?,?,?)',
-    [name,
-     parseFloat(document.getElementById('rec-kcal').value)||0,
-     parseFloat(document.getElementById('rec-prot').value)||0,
-     parseFloat(document.getElementById('rec-carb').value)||0,
-     parseFloat(document.getElementById('rec-fat').value)||0,
-     parseInt(document.getElementById('rec-portions').value)||1,
-     document.getElementById('rec-note').value]);
+  let kcal=parseFloat(document.getElementById('rec-kcal').value)||0;
+  let prot=parseFloat(document.getElementById('rec-prot').value)||0;
+  let carb=parseFloat(document.getElementById('rec-carb').value)||0;
+  let fat=parseFloat(document.getElementById('rec-fat').value)||0;
+  let portions=parseInt(document.getElementById('rec-portions').value)||1;
+  let note=document.getElementById('rec-note').value;
+  if (editingRecipeId) {
+    dbRun('UPDATE recipes SET name=?,kcal=?,prot=?,carb=?,fat=?,portions=?,note=? WHERE id=?',
+      [name,kcal,prot,carb,fat,portions,note,editingRecipeId]);
+  } else {
+    dbRun('INSERT INTO recipes(name,kcal,prot,carb,fat,portions,note) VALUES(?,?,?,?,?,?,?)',
+      [name,kcal,prot,carb,fat,portions,note]);
+  }
+  editingRecipeId=null;
   closeRecipeModal(); buildRecipesList();
 }
 function deleteRecipe(id) {
@@ -1054,6 +1319,7 @@ function buildRecipesList() {
       </div>
       <div class="recipe-actions">
         <button class="recipe-btn use" onclick="useRecipe(${r.id})">Usa</button>
+        <button class="recipe-btn" style="color:var(--blue);border-color:var(--blue)" onclick="editRecipe(${r.id})">✎</button>
         <button class="recipe-btn" onclick="deleteRecipe(${r.id})">✕</button>
       </div>
     </div>`).join('');
@@ -1190,7 +1456,8 @@ function exportDB() {
   let activities=dbGet('SELECT * FROM activities ORDER BY date,created_at')||[];
   let water=dbGet('SELECT * FROM water')||[];
   let recipes=dbGet('SELECT * FROM recipes')||[];
-  let blob=new Blob([JSON.stringify({v:3,settings,foods,activities,water,recipes},null,2)],{type:'application/json'});
+  let customFoods=dbGet('SELECT name,kcal,prot,carb,fat FROM food_db WHERE custom=1 ORDER BY name')||[];
+  let blob=new Blob([JSON.stringify({v:4,settings,foods,activities,water,recipes,customFoods},null,2)],{type:'application/json'});
   let a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
   a.download='nutritrack-backup-'+todayKey()+'.json';
@@ -1211,6 +1478,7 @@ function importDB(input) {
       (d.activities||[]).forEach(r=>dbRun('INSERT INTO activities(date,name,kcal,created_at) VALUES(?,?,?,?)',[r.date,r.name,r.kcal,r.created_at||0]));
       (d.water||[]).forEach(r=>dbRun('INSERT INTO water(date,glasses) VALUES(?,?)',[r.date,r.glasses]));
       (d.recipes||[]).forEach(r=>dbRun('INSERT INTO recipes(name,kcal,prot,carb,fat,portions,note) VALUES(?,?,?,?,?,?,?)',[r.name,r.kcal,r.prot,r.carb,r.fat,r.portions||1,r.note||'']));
+      (d.customFoods||[]).forEach(r=>dbRun('INSERT OR IGNORE INTO food_db(name,kcal,prot,carb,fat,custom) VALUES(?,?,?,?,?,1)',[r.name,r.kcal,r.prot,r.carb,r.fat]));
       loadCFG(); loadProfileUI(); loadDaysWithData(); refreshDateUI(); updateDBStats();
       alert('✓ Backup importato con successo!');
     } catch(err) { alert('Errore importazione: '+err.message); }
@@ -1252,6 +1520,7 @@ async function boot() {
     loadDaysWithData();
     refreshDateUI();
     scheduleWaterReminders();
+    checkWaterOnOpen();
     // Show app
     document.getElementById('splash').style.display='none';
     document.getElementById('app').style.display='flex';
