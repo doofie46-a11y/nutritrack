@@ -1075,6 +1075,13 @@ function requestNotifPermission() {
   if (!('Notification' in window)) return;
   Notification.requestPermission().then(()=>{ checkNotifPermission(); scheduleWaterReminders(); });
 }
+function showNotif(title, body) {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.ready.then(reg =>
+      reg.showNotification(title, {body, icon: 'icons/icon-192.png'})
+    );
+  }
+}
 function scheduleWaterReminders() {
   if (waterTimerID) clearInterval(waterTimerID);
   let interval=CFG.waterInterval||0;
@@ -1087,7 +1094,7 @@ function scheduleWaterReminders() {
       let water=dbGet('SELECT glasses FROM water WHERE date=?',[todayKey()]);
       let wg=water&&water.length?water[0].glasses:0;
       if (wg<CFG.waterGoal) {
-        new Notification('💧 NutriTrack — Bevi acqua!',{body:'Hai bevuto '+wg+' bicchieri su '+CFG.waterGoal+'.',icon:'icons/icon-192.png'});
+        showNotif('💧 NutriTrack — Bevi acqua!','Hai bevuto '+wg+' bicchieri su '+CFG.waterGoal+'.');
       }
     }
   }, interval*60*1000);
@@ -1106,7 +1113,7 @@ function checkWaterOnOpen() {
   let water=dbGet('SELECT glasses FROM water WHERE date=?',[todayKey()]);
   let wg=water&&water.length?water[0].glasses:0;
   if (wg<CFG.waterGoal) {
-    new Notification('💧 NutriTrack — Bevi acqua!',{body:'Bentornato! Hai bevuto '+wg+' bicchieri su '+CFG.waterGoal+' oggi.',icon:'icons/icon-192.png'});
+    showNotif('💧 NutriTrack — Bevi acqua!','Bentornato! Hai bevuto '+wg+' bicchieri su '+CFG.waterGoal+' oggi.');
   }
 }
 
