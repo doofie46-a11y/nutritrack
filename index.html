@@ -453,6 +453,8 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);background:var(--b
         <button class="btn btn-outline" onclick="exportDB()" style="margin-top:10px">⬇ Esporta backup JSON</button>
         <button class="btn btn-outline" onclick="document.getElementById('import-file').click()">⬆ Importa backup JSON</button>
         <input type="file" id="import-file" accept=".json" style="display:none" onchange="importDB(this)"/>
+        <button class="btn btn-outline" onclick="document.getElementById('csv-food-file').click()">📥 Importa alimenti da CSV</button>
+        <input type="file" id="csv-food-file" accept=".csv,.txt" style="display:none" onchange="importFoodCSV(this)"/>
         <button class="btn btn-danger" onclick="confirmReset()">✕ Cancella tutti i dati</button>
       </div>
     </div>
@@ -1493,6 +1495,40 @@ function importDB(input) {
   reader.readAsText(file);
   input.value='';
 }
+function importFoodCSV(input) {
+  let file = input.files[0]; if (!file) return;
+  let reader = new FileReader();
+  reader.onload = e => {
+    try {
+      let text = e.target.result;
+      let sep = text.indexOf(';') !== -1 ? ';' : ',';
+      let lines = text.split(/\r?\n/).filter(l => l.trim());
+      if (!lines.length) { alert('File vuoto.'); return; }
+      // Salta intestazione se la prima cella non è un numero
+      let firstCell = lines[0].split(sep)[0].trim().replace(/^["']|["']$/g, '');
+      let start = isNaN(parseFloat(firstCell.replace(',', '.'))) ? 1 : 0;
+      let added = 0, skipped = 0;
+      lines.slice(start).forEach(line => {
+        let cols = line.split(sep).map(c => c.trim().replace(/^["']|["']$/g, ''));
+        if (cols.length < 2) { skipped++; return; }
+        let name = cols[0];
+        let kcal = parseFloat((cols[1]||'').replace(',', '.'));
+        let prot = parseFloat((cols[2]||'0').replace(',', '.')) || 0;
+        let carb = parseFloat((cols[3]||'0').replace(',', '.')) || 0;
+        let fat  = parseFloat((cols[4]||'0').replace(',', '.')) || 0;
+        if (!name || isNaN(kcal)) { skipped++; return; }
+        let exists = dbGet('SELECT id FROM food_db WHERE name=?', [name]);
+        if (exists && exists.length) { skipped++; return; }
+        dbRun('INSERT INTO food_db(name,kcal,prot,carb,fat,custom) VALUES(?,?,?,?,?,1)', [name, kcal, prot, carb, fat]);
+        added++;
+      });
+      alert('✓ Importazione completata!\n' + added + ' alimenti aggiunti, ' + skipped + ' saltati (duplicati o riga non valida).');
+    } catch(err) { alert('Errore importazione CSV: ' + err.message); }
+  };
+  reader.readAsText(file);
+  input.value = '';
+}
+
 function confirmReset() {
   if (!confirm('Cancellare TUTTI i dati? Questa operazione è irreversibile.')) return;
   if (!confirm('Conferma: cancellare tutto?')) return;
