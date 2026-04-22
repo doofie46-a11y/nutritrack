@@ -57,7 +57,7 @@ There is no reactive framework. State is a global `CFG` object (hydrated from th
 
 ### Service Worker (`sw.js`)
 
-Cache name `nutritrack-v4`. Caches all static assets. OpenFoodFacts requests are explicitly excluded from caching so food data stays fresh.
+Cache name `nutritrack-v5`. Caches all static assets. OpenFoodFacts requests are explicitly excluded from caching so food data stays fresh. To force clients to reload after a deploy, bump the cache version string — the activate handler automatically deletes old caches.
 
 ## Key Calculations
 
@@ -82,8 +82,10 @@ Default macro split: protein 1.8 g/kg body weight; carbs 45% of target kcal; fat
 The app uses a local SQLite food database instead of any external API.
 
 - **Seed**: ~130 common Italian foods loaded by `seedFoodDB()` at first boot (runs once, checks `COUNT(*)`). Seed rows have `custom=0`.
-- **User additions**: when a user adds a new food during search, it's inserted with `custom=1` and marked "★ personale" in results. Custom foods appear first in search results (`ORDER BY custom DESC`).
+- **User additions**: when a user adds a new food during search, it's inserted with `custom=1`. Custom foods appear first in search results (`ORDER BY custom DESC`).
 - **Search**: `LIKE '%term%'` query, minimum 2 characters, 200 ms debounce, max 20 results. Always shows an "➕ Aggiungi al database" option at the bottom of the list.
+- **CSV import**: Profile → "📥 Importa alimenti da CSV". The user first selects the separator (`;` or `,`) via a modal, then picks the file. Parser (`parseCSVLine`) handles RFC 4180 quoted fields (commas inside names, `""` escaping). Columns: `nome, kcal, proteine, carboidrati, grassi` — header row auto-detected. Imported rows are inserted as `custom=1`. `tabella-alimenti-completa.csv` (900 Italian foods from CREA) is included in the repo as a ready-to-import dataset.
+- **Management**: Profile → "⚙ Gestione alimenti DB" opens a searchable modal listing all `food_db` entries. Each row has ✎ (edit) and ✕ (delete). Edit reuses `food-db-modal` with `editingFoodId` state (same pattern as `editingRecipeId`); the qty field is hidden when editing.
 - **Backup**: only `custom=1` rows are included in JSON exports (seed data is re-generated on first boot on any device).
 
 To add more seed foods, edit the `SEED` array inside `seedFoodDB()`. The array format is `[name, kcal/100g, prot, carb, fat]`. After editing, increment the seed version or clear `food_db` manually to re-seed (the function is a no-op if the table is non-empty).
