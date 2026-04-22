@@ -168,6 +168,14 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);background:var(--b
 .recipe-btn{padding:5px 10px;border-radius:6px;border:1px solid var(--border2);background:transparent;color:var(--text2);font-size:11px;cursor:pointer;font-family:var(--font)}
 .recipe-btn.use{background:var(--green-bg);border-color:var(--green);color:var(--green)}
 
+/* MANAGE LIST */
+.manage-list{max-height:52vh;overflow-y:auto;margin:8px 0 4px}
+.manage-item{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-radius:6px;background:var(--bg3);margin-bottom:4px;gap:8px}
+.manage-item-info{flex:1;min-width:0}
+.manage-item-name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.manage-item-meta{font-size:11px;color:var(--text2);margin-top:1px}
+.manage-item-actions{display:flex;gap:4px;flex-shrink:0}
+
 /* PERIOD TABS */
 .period-tabs{display:flex;gap:6px;margin-bottom:12px}
 .period-tab{padding:6px 14px;border-radius:20px;border:1px solid var(--border2);background:transparent;color:var(--text2);font-size:12px;cursor:pointer;font-family:var(--font)}
@@ -450,7 +458,8 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);background:var(--b
         <div class="stat-row"><span class="stat-key">Dimensione DB</span><span class="stat-val" id="db-size">—</span></div>
         <div class="stat-row"><span class="stat-key">Giorni registrati</span><span class="stat-val" id="db-days">—</span></div>
         <div class="stat-row"><span class="stat-key">Alimenti inseriti</span><span class="stat-val" id="db-foods">—</span></div>
-        <button class="btn btn-outline" onclick="exportDB()" style="margin-top:10px">⬇ Esporta backup JSON</button>
+        <button class="btn btn-outline" onclick="openFoodManageModal()" style="margin-top:10px">⚙ Gestione alimenti DB</button>
+        <button class="btn btn-outline" onclick="exportDB()">⬇ Esporta backup JSON</button>
         <button class="btn btn-outline" onclick="document.getElementById('import-file').click()">⬆ Importa backup JSON</button>
         <input type="file" id="import-file" accept=".json" style="display:none" onchange="importDB(this)"/>
         <button class="btn btn-outline" onclick="openCSVSepModal()">📥 Importa alimenti da CSV</button>
@@ -492,15 +501,15 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);background:var(--b
   </div>
 </div>
 
-<!-- MODAL AGGIUNGI ALIMENTO AL DATABASE -->
+<!-- MODAL AGGIUNGI / MODIFICA ALIMENTO -->
 <div class="modal-overlay" id="food-db-modal">
   <div class="modal">
-    <div class="modal-title">Aggiungi alimento al database</div>
+    <div class="modal-title" id="fdb-modal-title">Aggiungi alimento al database</div>
     <div class="hint" style="margin-bottom:12px">Tutti i valori sono per 100g di alimento</div>
     <div class="form-group"><label class="form-label">Nome</label><input class="form-input" id="fdb-name" type="text" placeholder="Es. Petto di pollo…"/></div>
     <div class="form-row-2">
       <div class="form-group"><label class="form-label">Kcal / 100g</label><input class="form-input" id="fdb-kcal" type="number" value="0" min="0"/></div>
-      <div class="form-group"><label class="form-label">Quantità da aggiungere (g)</label><input class="form-input" id="fdb-qty" type="number" value="100" min="1"/></div>
+      <div class="form-group" id="fdb-qty-row"><label class="form-label">Quantità da aggiungere (g)</label><input class="form-input" id="fdb-qty" type="number" value="100" min="1"/></div>
     </div>
     <div class="form-row-3">
       <div class="form-group"><label class="form-label">Proteine g</label><input class="form-input" id="fdb-prot" type="number" value="0" min="0"/></div>
@@ -509,8 +518,19 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);background:var(--b
     </div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-outline" style="flex:1" onclick="closeFoodDBModal()">Annulla</button>
-      <button class="btn btn-accent" style="flex:1" onclick="saveFoodToDB()">Salva &amp; aggiungi</button>
+      <button class="btn btn-accent" style="flex:1" id="fdb-save-btn" onclick="saveFoodToDB()">Salva &amp; aggiungi</button>
     </div>
+  </div>
+</div>
+
+<!-- MODAL GESTIONE ALIMENTI DB -->
+<div class="modal-overlay" id="food-manage-modal">
+  <div class="modal">
+    <div class="modal-title">Gestione alimenti</div>
+    <input class="form-input" id="food-manage-search" type="text" placeholder="Cerca nel database…" oninput="buildFoodManageList(this.value)" style="margin-bottom:8px"/>
+    <div class="manage-list" id="food-manage-list"></div>
+    <div id="food-manage-count" style="font-size:11px;color:var(--text2);margin-bottom:10px"></div>
+    <button class="btn btn-outline" onclick="document.getElementById('food-manage-modal').classList.remove('open')">Chiudi</button>
   </div>
 </div>
 
@@ -1190,11 +1210,31 @@ function doSearch(q) {
   addEl.onclick=()=>openFoodDBModal(q);
   drop.appendChild(addEl);
 }
+let editingFoodId = null;
 function openFoodDBModal(name) {
+  editingFoodId = null;
   closeSearch();
-  document.getElementById('fdb-name').value=name||'';
+  document.getElementById('fdb-modal-title').textContent = 'Aggiungi alimento al database';
+  document.getElementById('fdb-save-btn').textContent = 'Salva & aggiungi';
+  document.getElementById('fdb-name').value = name||'';
   ['fdb-kcal','fdb-prot','fdb-carb','fdb-fat'].forEach(id=>document.getElementById(id).value=0);
-  document.getElementById('fdb-qty').value=100;
+  document.getElementById('fdb-qty').value = 100;
+  document.getElementById('fdb-qty-row').style.display = '';
+  document.getElementById('food-db-modal').classList.add('open');
+}
+function openFoodDBEdit(id) {
+  let r = dbGet('SELECT * FROM food_db WHERE id=?',[id]);
+  if (!r||!r.length) return;
+  let f = r[0];
+  editingFoodId = id;
+  document.getElementById('fdb-modal-title').textContent = 'Modifica alimento';
+  document.getElementById('fdb-save-btn').textContent = 'Salva modifiche';
+  document.getElementById('fdb-name').value = f.name;
+  document.getElementById('fdb-kcal').value = f.kcal;
+  document.getElementById('fdb-prot').value = f.prot;
+  document.getElementById('fdb-carb').value = f.carb;
+  document.getElementById('fdb-fat').value = f.fat;
+  document.getElementById('fdb-qty-row').style.display = 'none';
   document.getElementById('food-db-modal').classList.add('open');
 }
 function closeFoodDBModal() { document.getElementById('food-db-modal').classList.remove('open'); }
@@ -1204,13 +1244,52 @@ function saveFoodToDB() {
   let kcal=parseFloat(document.getElementById('fdb-kcal').value)||0;
   let prot=parseFloat(document.getElementById('fdb-prot').value)||0;
   let carb=parseFloat(document.getElementById('fdb-carb').value)||0;
-  let fat=parseFloat(document.getElementById('fdb-fat').value)||0;
-  let qty=parseFloat(document.getElementById('fdb-qty').value)||100;
-  dbRun('INSERT INTO food_db(name,kcal,prot,carb,fat,custom) VALUES(?,?,?,?,?,1)',[name,kcal,prot,carb,fat]);
-  closeFoodDBModal();
-  document.getElementById('search-input').value=name;
-  selectFood({name,kcal100:kcal,prot100:prot,carb100:carb,fat100:fat});
-  document.getElementById('qty-val').value=qty;
+  let fat =parseFloat(document.getElementById('fdb-fat').value)||0;
+  if (editingFoodId) {
+    dbRun('UPDATE food_db SET name=?,kcal=?,prot=?,carb=?,fat=? WHERE id=?',[name,kcal,prot,carb,fat,editingFoodId]);
+    closeFoodDBModal();
+    buildFoodManageList(document.getElementById('food-manage-search').value);
+  } else {
+    let qty=parseFloat(document.getElementById('fdb-qty').value)||100;
+    dbRun('INSERT INTO food_db(name,kcal,prot,carb,fat,custom) VALUES(?,?,?,?,?,1)',[name,kcal,prot,carb,fat]);
+    closeFoodDBModal();
+    document.getElementById('search-input').value=name;
+    selectFood({name,kcal100:kcal,prot100:prot,carb100:carb,fat100:fat});
+    document.getElementById('qty-val').value=qty;
+  }
+}
+function openFoodManageModal() {
+  document.getElementById('food-manage-search').value='';
+  buildFoodManageList('');
+  document.getElementById('food-manage-modal').classList.add('open');
+}
+function buildFoodManageList(q) {
+  let term = (q||'').trim();
+  let foods = term.length>=2
+    ? dbGet('SELECT * FROM food_db WHERE name LIKE ? ORDER BY custom DESC, name LIMIT 150',['%'+term+'%'])||[]
+    : dbGet('SELECT * FROM food_db ORDER BY custom DESC, name LIMIT 150')||[];
+  let total = (dbGet('SELECT COUNT(*) as n FROM food_db')||[{n:0}])[0].n;
+  document.getElementById('food-manage-count').textContent = foods.length + (foods.length===150?'+':'') + ' / ' + total + ' alimenti';
+  let c = document.getElementById('food-manage-list');
+  if (!foods.length) { c.innerHTML='<div class="empty">Nessun alimento trovato.</div>'; return; }
+  c.innerHTML = foods.map(f=>`
+    <div class="manage-item">
+      <div class="manage-item-info">
+        <div class="manage-item-name">${f.name}</div>
+        <div class="manage-item-meta">${f.kcal} kcal · P:${f.prot}g C:${f.carb}g G:${f.fat}g</div>
+      </div>
+      <div class="manage-item-actions">
+        <button class="recipe-btn" style="color:var(--blue);border-color:var(--blue)" onclick="openFoodDBEdit(${f.id})">✎</button>
+        <button class="recipe-btn" onclick="deleteFoodFromDB(${f.id})">✕</button>
+      </div>
+    </div>`).join('');
+}
+function deleteFoodFromDB(id) {
+  let r = dbGet('SELECT name FROM food_db WHERE id=?',[id]);
+  if (!r||!r.length) return;
+  if (!confirm('Eliminare "'+r[0].name+'" dal database?')) return;
+  dbRun('DELETE FROM food_db WHERE id=?',[id]);
+  buildFoodManageList(document.getElementById('food-manage-search').value);
 }
 function selectFood(f) {
   selectedFood=f;
