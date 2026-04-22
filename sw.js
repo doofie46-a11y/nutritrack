@@ -1,4 +1,4 @@
-const CACHE = 'nutritrack-v4';
+const CACHE = 'nutritrack-v5';
 const ASSETS = [
   '/nutritrack/',
   '/nutritrack/index.html',
