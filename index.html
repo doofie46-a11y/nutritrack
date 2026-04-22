@@ -453,7 +453,7 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);background:var(--b
         <button class="btn btn-outline" onclick="exportDB()" style="margin-top:10px">⬇ Esporta backup JSON</button>
         <button class="btn btn-outline" onclick="document.getElementById('import-file').click()">⬆ Importa backup JSON</button>
         <input type="file" id="import-file" accept=".json" style="display:none" onchange="importDB(this)"/>
-        <button class="btn btn-outline" onclick="document.getElementById('csv-food-file').click()">📥 Importa alimenti da CSV</button>
+        <button class="btn btn-outline" onclick="openCSVSepModal()">📥 Importa alimenti da CSV</button>
         <input type="file" id="csv-food-file" accept=".csv,.txt" style="display:none" onchange="importFoodCSV(this)"/>
         <button class="btn btn-danger" onclick="confirmReset()">✕ Cancella tutti i dati</button>
       </div>
@@ -531,6 +531,16 @@ html,body{height:100%;overflow:hidden;font-family:var(--font);background:var(--b
       <button class="btn btn-outline" style="flex:1" onclick="closeCalModal()">Chiudi</button>
       <button class="btn btn-accent" style="flex:1" onclick="goToday()">Oggi</button>
     </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="csv-sep-modal">
+  <div class="modal">
+    <div class="modal-title">Separatore CSV</div>
+    <p style="color:var(--text2);margin:8px 0 18px">Che separatore usa il tuo file?</p>
+    <button class="btn" style="margin-bottom:10px" onclick="startCSVImport(';')">Punto e virgola &nbsp;( ; )</button>
+    <button class="btn btn-outline" style="margin-bottom:10px" onclick="startCSVImport(',')">Virgola &nbsp;( , )</button>
+    <button class="btn btn-outline" onclick="document.getElementById('csv-sep-modal').classList.remove('open')">Annulla</button>
   </div>
 </div>
 
@@ -1495,21 +1505,40 @@ function importDB(input) {
   reader.readAsText(file);
   input.value='';
 }
+let csvSeparator = ';';
+function openCSVSepModal() { document.getElementById('csv-sep-modal').classList.add('open'); }
+function startCSVImport(sep) {
+  csvSeparator = sep;
+  document.getElementById('csv-sep-modal').classList.remove('open');
+  document.getElementById('csv-food-file').click();
+}
+function parseCSVLine(line, sep) {
+  let result = [], cur = '', inQuote = false;
+  for (let i = 0; i < line.length; i++) {
+    let ch = line[i];
+    if (ch === '"') {
+      if (inQuote && line[i+1] === '"') { cur += '"'; i++; }
+      else inQuote = !inQuote;
+    } else if (ch === sep && !inQuote) {
+      result.push(cur.trim()); cur = '';
+    } else { cur += ch; }
+  }
+  result.push(cur.trim());
+  return result;
+}
 function importFoodCSV(input) {
   let file = input.files[0]; if (!file) return;
+  let sep = csvSeparator;
   let reader = new FileReader();
   reader.onload = e => {
     try {
-      let text = e.target.result;
-      let sep = text.indexOf(';') !== -1 ? ';' : ',';
-      let lines = text.split(/\r?\n/).filter(l => l.trim());
+      let lines = e.target.result.split(/\r?\n/).filter(l => l.trim());
       if (!lines.length) { alert('File vuoto.'); return; }
-      // Salta intestazione se la prima cella non è un numero
-      let firstCell = lines[0].split(sep)[0].trim().replace(/^["']|["']$/g, '');
-      let start = isNaN(parseFloat(firstCell.replace(',', '.'))) ? 1 : 0;
+      let firstCol = parseCSVLine(lines[0], sep)[0];
+      let start = isNaN(parseFloat(firstCol.replace(',', '.'))) ? 1 : 0;
       let added = 0, skipped = 0;
       lines.slice(start).forEach(line => {
-        let cols = line.split(sep).map(c => c.trim().replace(/^["']|["']$/g, ''));
+        let cols = parseCSVLine(line, sep);
         if (cols.length < 2) { skipped++; return; }
         let name = cols[0];
         let kcal = parseFloat((cols[1]||'').replace(',', '.'));
@@ -1522,7 +1551,7 @@ function importFoodCSV(input) {
         dbRun('INSERT INTO food_db(name,kcal,prot,carb,fat,custom) VALUES(?,?,?,?,?,1)', [name, kcal, prot, carb, fat]);
         added++;
       });
-      alert('✓ Importazione completata!\n' + added + ' alimenti aggiunti, ' + skipped + ' saltati (duplicati o riga non valida).');
+      alert('✓ ' + added + ' alimenti aggiunti, ' + skipped + ' saltati (duplicati o riga non valida).');
     } catch(err) { alert('Errore importazione CSV: ' + err.message); }
   };
   reader.readAsText(file);
